@@ -27,27 +27,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Check for existing session
     const checkUser = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error('Session error:', sessionError)
+          await supabase.auth.signOut()
+          setUser(null)
+          setLoading(false)
+          return
+        }
+        
         if (session?.user) {
           // Fetch farmer details
-          const { data: farmer } = await supabase
+          const { data: farmer, error: farmerError } = await supabase
             .from('farmers')
             .select('*')
             .eq('email', session.user.email)
             .single()
-          setUser(farmer)
+          
+          if (farmerError) {
+            console.error('Farmer fetch error:', farmerError)
+            await supabase.auth.signOut()
+            setUser(null)
+          } else {
+            setUser(farmer)
+          }
+        } else {
+          setUser(null)
         }
-        setLoading(false)
       } catch (error) {
-        // Handle invalid refresh token by clearing session
         console.error('Session check error:', error)
-        
-        // Check if it's a refresh token error and clear the session
-        if (error instanceof Error && error.message.includes('Refresh Token Not Found')) {
-          await supabase.auth.signOut()
-        }
-        
+        await supabase.auth.signOut()
         setUser(null)
+      } finally {
         setLoading(false)
       }
     }
@@ -56,17 +68,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (session?.user) {
-        const { data: farmer } = await supabase
-          .from('farmers')
-          .select('*')
-          .eq('email', session.user.email)
-          .single()
-        setUser(farmer)
-      } else {
+      try {
+        if (event === 'SIGNED_OUT' || !session?.user) {
+          setUser(null)
+        } else if (session?.user) {
+          const { data: farmer, error: farmerError } = await supabase
+            .from('farmers')
+            .select('*')
+            .eq('email', session.user.email)
+            .single()
+          
+          if (farmerError) {
+            console.error('Farmer fetch error:', farmerError)
+            await supabase.auth.signOut()
+            setUser(null)
+          } else {
+            setUser(farmer)
+          }
+        }
+      } catch (error) {
+        console.error('Auth state change error:', error)
+        await supabase.auth.signOut()
         setUser(null)
       }
-      setLoading(false)
     })
 
     return () => subscription.unsubscribe()
@@ -90,8 +114,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) throw error
+    try {
+      await supabase.auth.signOut()
+    } catch (error) {
+      console.error('Sign out error:', error)
+    }
     setUser(null)
   }
 
