@@ -39,13 +39,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
         setLoading(false)
       } catch (error) {
-        // If there's any session issue, redirect to home page
+        // Handle invalid refresh token by clearing session
         console.error('Session check error:', error)
+        
+        // Check if it's a refresh token error and clear the session
+        if (error instanceof Error && error.message.includes('Refresh Token Not Found')) {
+          await supabase.auth.signOut()
+        }
+        
         setUser(null)
         setLoading(false)
-        if (window.location.pathname !== '/') {
-          window.location.href = '/'
-        }
       }
     }
 
